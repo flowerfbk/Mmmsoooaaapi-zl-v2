@@ -860,6 +860,17 @@ async def _process_video_generation_v2(video_id: str):
             }
             _touch_video_task(task_info)
             await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=error_detected)
+            try:
+                await generation_handler.db.update_request_log_by_task_id(
+                    video_id,
+                    response_body=json.dumps(
+                        {"task_id": video_id, "status": "error", "error": error_detected},
+                        ensure_ascii=False,
+                    ),
+                    status_code=400,
+                )
+            except Exception:
+                pass
             return
         
         # Try to get result from database if not found in stream
@@ -916,6 +927,17 @@ async def _process_video_generation_v2(video_id: str):
             }
             _touch_video_task(task_info)
             await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=error_msg)
+            try:
+                await generation_handler.db.update_request_log_by_task_id(
+                    video_id,
+                    response_body=json.dumps(
+                        {"task_id": video_id, "status": "error", "error": error_msg},
+                        ensure_ascii=False,
+                    ),
+                    status_code=500,
+                )
+            except Exception:
+                pass
             return
 
         # Mark as completed (use new-api-main compatible status)
@@ -969,6 +991,18 @@ async def _process_video_generation_v2(video_id: str):
         try:
             # 数据库中保存完整错误信息用于调试
             await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=str(e))
+        except Exception:
+            pass
+
+        try:
+            await generation_handler.db.update_request_log_by_task_id(
+                video_id,
+                response_body=json.dumps(
+                    {"task_id": video_id, "status": "error", "error": str(e)},
+                    ensure_ascii=False,
+                ),
+                status_code=500,
+            )
         except Exception:
             pass
 
@@ -1802,7 +1836,7 @@ async def create_video(
         # Async mode: create task and return immediately
         if async_mode:
             from ..core.database import Database
-            from ..core.models import Task
+            from ..core.models import Task, RequestLog
             
             db = Database()
             
@@ -1817,6 +1851,32 @@ async def create_video(
                 progress=0.0
             )
             await db.create_task(task)
+
+            # Create an in-progress request log row so that the background worker can
+            # update response_body with url/urls when completed (admin UI relies on this).
+            try:
+                await db.log_request(
+                    RequestLog(
+                        token_id=None,
+                        task_id=video_id,
+                        operation="generate_video",
+                        request_body=json.dumps(
+                            {
+                                "model": model,
+                                "prompt": prompt,
+                                "seconds": str(duration),
+                                "size": size,
+                                "async_mode": True,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        response_body=None,
+                        status_code=-1,
+                        duration=-1.0,
+                    )
+                )
+            except Exception:
+                pass
             
             # Store task info in memory for progress tracking
             _video_tasks[video_id] = {

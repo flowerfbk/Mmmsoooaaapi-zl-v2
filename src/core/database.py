@@ -2315,7 +2315,7 @@ class Database:
                     tk.status as task_status
                 FROM request_logs rl
                 LEFT JOIN tokens t ON rl.token_id = t.id
-                LEFT JOIN tasks tk ON rl.task_id = tk.task_id
+                LEFT JOIN tasks tk ON (rl.task_id = tk.task_id OR rl.task_id = tk.poll_task_id)
                 ORDER BY rl.created_at DESC
                 LIMIT ?
             """, (limit,))
@@ -2343,7 +2343,7 @@ class Database:
                     tk.status as task_status
                 FROM request_logs rl
                 LEFT JOIN tokens t ON rl.token_id = t.id
-                LEFT JOIN tasks tk ON rl.task_id = tk.task_id
+                LEFT JOIN tasks tk ON (rl.task_id = tk.task_id OR rl.task_id = tk.poll_task_id)
                 WHERE rl.id = ?
                 LIMIT 1
             """, (log_id,))
