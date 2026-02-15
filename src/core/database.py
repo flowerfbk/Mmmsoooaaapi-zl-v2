@@ -443,14 +443,14 @@ class Database:
         count = await cursor.fetchone()
         if self._get_count_value(count) == 0:
             # Get admin credentials from config_dict if provided, otherwise use defaults
-            admin_username = "admin"
-            admin_password = "admin"
+            admin_username = "adm_0c9f3a7d"
+            admin_password = "pw_1a7c9e3f5b2d6c8a"
             error_ban_threshold = 3
 
             if config_dict:
                 global_config = config_dict.get("global", {})
-                admin_username = global_config.get("admin_username", "admin")
-                admin_password = global_config.get("admin_password", "admin")
+                admin_username = global_config.get("admin_username", admin_username)
+                admin_password = global_config.get("admin_password", admin_password)
 
                 admin_config = config_dict.get("admin", {})
                 error_ban_threshold = admin_config.get("error_ban_threshold", 3)
