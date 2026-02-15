@@ -39,6 +39,59 @@
                 </button>
             </div>
         </div>
+
+        <!-- 数据库浏览面板 -->
+        <div id="panelDb" class="hidden">
+            <div class="grid gap-4 lg:grid-cols-4">
+                <!-- 表列表 -->
+                <div class="lg:col-span-1 rounded-lg border border-border bg-background p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-base font-semibold">数据表</h3>
+                        <button onclick="loadDbTables(true)" class="inline-flex items-center justify-center rounded-md transition-colors hover:bg-accent h-7 w-7" title="刷新">
+                            <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="dbTablesList" class="space-y-1 max-h-[420px] overflow-y-auto text-sm">
+                        <!-- 动态填充表名 -->
+                    </div>
+                </div>
+
+                <!-- 表数据 -->
+                <div class="lg:col-span-3 rounded-lg border border-border bg-background p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 class="text-base font-semibold">表数据</h3>
+                            <p id="dbTableInfo" class="text-xs text-muted-foreground mt-1">请选择左侧数据表进行查看</p>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span id="dbTableName" class="font-mono"></span>
+                        </div>
+                    </div>
+                    <div class="border border-border rounded-md overflow-hidden">
+                        <div class="relative w-full overflow-auto max-h-[420px]">
+                            <table class="w-full text-xs">
+                                <thead class="sticky top-0 bg-background/95 backdrop-blur" id="dbTableHead">
+                                    <!-- 动态填充表头 -->
+                                </thead>
+                                <tbody id="dbTableBody" class="divide-y divide-border">
+                                    <!-- 动态填充数据行 -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="flex items-center justify-between px-3 py-2 border-t border-border text-xs">
+                            <div id="dbPageInfo" class="text-muted-foreground">共 0 条</div>
+                            <div class="flex items-center gap-2">
+                                <button id="dbPrevPageBtn" onclick="dbPrevPage()" class="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent h-7 px-2 disabled:opacity-50" disabled>上一页</button>
+                                <button id="dbNextPageBtn" onclick="dbNextPage()" class="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent h-7 px-2 disabled:opacity-50" disabled>下一页</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-[11px] text-muted-foreground">每页最多显示 50 条记录，按 <code>created_at</code> 或 <code>id</code> 倒序排序。</p>
+                </div>
+            </div>
+        </div>
     </header>
 
     <main class="mx-auto max-w-7xl px-6 py-6">
@@ -1574,7 +1627,7 @@
         dbPrevPage=async()=>{if(dbState.page>1){dbState.page--;await loadDbTablePage()}},
         dbNextPage=async()=>{const totalPages=dbState.total===0?1:Math.ceil(dbState.total/dbState.pageSize);if(dbState.page<totalPages){dbState.page++;await loadDbTablePage()}},
 
-switchTab=t=>{const cap=n=>n.charAt(0).toUpperCase()+n.slice(1);['tokens','settings','logs','db','watermark'].forEach(n=>{const active=n===t;$(`panel${cap(n)}`).classList.toggle('hidden',!active);$(`tab${cap(n)}`).classList.toggle('border-primary',active);$(`tab${cap(n)}`).classList.toggle('text-primary',active);$(`tab${cap(n)}`).classList.toggle('border-transparent',!active);$(`tab${cap(n)}`).classList.toggle('text-muted-foreground',!active)});if(t==='settings'){loadAdminConfig();loadProxyConfig();loadProxyPool();loadWatermarkFreeConfig();loadCacheConfig();loadGenerationTimeout();loadLambdaConfig();loadATAutoRefreshConfig();loadSentinelConfig();loadDeadTokenConfig();loadTranslationConfig();loadSoraAppConfig()}else if(t==='logs'){loadLogs()}else if(t==='db'){loadDbTables(true)}else if(t==='webdav'){loadWebdavConfig();loadWebdavStats();refreshWebdavVideos();refreshUploadLogs()}else if(t==='watermark'){loadWatermarkStats();refreshWatermarkAccounts();refreshWatermarkLogs()}},
+switchTab=t=>{const cap=n=>n.charAt(0).toUpperCase()+n.slice(1);['tokens','settings','logs','db','watermark'].forEach(n=>{const active=n===t;const panel=$(`panel${cap(n)}`);if(panel)panel.classList.toggle('hidden',!active);const tab=$(`tab${cap(n)}`);if(tab){tab.classList.toggle('border-primary',active);tab.classList.toggle('text-primary',active);tab.classList.toggle('border-transparent',!active);tab.classList.toggle('text-muted-foreground',!active)}});if(t==='settings'){loadAdminConfig();loadProxyConfig();loadProxyPool();loadWatermarkFreeConfig();loadCacheConfig();loadGenerationTimeout();loadLambdaConfig();loadATAutoRefreshConfig();loadSentinelConfig();loadDeadTokenConfig();loadTranslationConfig();loadSoraAppConfig()}else if(t==='logs'){loadLogs()}else if(t==='db'){loadDbTables(true)}else if(t==='webdav'){loadWebdavConfig();loadWebdavStats();refreshWebdavVideos();refreshUploadLogs()}else if(t==='watermark'){loadWatermarkStats();refreshWatermarkAccounts();refreshWatermarkLogs()}},
         // WebDAV functions
         toggleWebdavOptions=()=>{const enabled=$('cfgWebdavEnabled').checked;$('webdavOptions').style.display=enabled?'block':'none'},
         loadWebdavConfig=async()=>{try{const r=await apiRequest('/api/webdav/config');if(!r)return;const d=await r.json();if(d.success&&d.config){$('cfgWebdavEnabled').checked=d.config.webdav_enabled||false;$('cfgWebdavUrl').value=d.config.webdav_url||'';$('cfgWebdavUsername').value=d.config.webdav_username||'';$('cfgWebdavPassword').value=d.config.webdav_password||'';$('cfgWebdavUploadPath').value=d.config.webdav_upload_path||'/video';$('cfgAutoDeleteEnabled').checked=d.config.auto_delete_enabled||false;$('cfgAutoDeleteDays').value=d.config.auto_delete_days||30;toggleWebdavOptions()}}catch(e){console.error('加载WebDAV配置失败:',e)}},
