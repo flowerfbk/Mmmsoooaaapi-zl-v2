@@ -859,14 +859,14 @@ async def _process_video_generation_v2(video_id: str):
                 "code": "content_policy_violation" if "policy" in error_detected.lower() else "generation_failed"
             }
             _touch_video_task(task_info)
-            await db.update_task(video_id, "failed", 0.0, error_message=error_detected)
+            await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=error_detected)
             return
         
         # Try to get result from database if not found in stream
         if not result_url:
             print(f"[VideoTask] {video_id}: No URL found in stream, checking database...")
             # First check database for completed/failed status
-            db_task = await db.get_task(video_id)
+            db_task = await db.get_task_by_poll_id(video_id)
             if db_task:
                 if db_task.status == "failed":
                     error_msg = db_task.error_message or "Generation failed"
@@ -915,7 +915,7 @@ async def _process_video_generation_v2(video_id: str):
                 "code": "result_not_found"
             }
             _touch_video_task(task_info)
-            await db.update_task(video_id, "failed", 0.0, error_message=error_msg)
+            await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=error_msg)
             return
 
         # Mark as completed (use new-api-main compatible status)
@@ -927,11 +927,11 @@ async def _process_video_generation_v2(video_id: str):
         _touch_video_task(task_info)
         
         # Update database
-        await db.update_task(
+        await db.update_task_by_poll_id(
             video_id,
             "completed",
             100.0,
-            result_urls=result_url,
+            result_urls=json.dumps([result_url], ensure_ascii=False),
             generation_id=task_info.get("generation_id"),
             permalink=task_info.get("permalink")
         )
@@ -968,7 +968,7 @@ async def _process_video_generation_v2(video_id: str):
         _touch_video_task(task_info)
         try:
             # 数据库中保存完整错误信息用于调试
-            await db.update_task(video_id, "failed", 0.0, error_message=str(e))
+            await db.update_task_by_poll_id(video_id, "failed", 0.0, error_message=str(e))
         except Exception:
             pass
 
@@ -1809,7 +1809,8 @@ async def create_video(
             # Create task in database
             task = Task(
                 task_id=video_id,
-                token_id=0,  # Will be set by generation handler
+                poll_task_id=video_id,
+                token_id=None,  # Will be set by generation handler
                 model=final_model,
                 prompt=prompt,
                 status="in_progress",  # new-api-main uses in_progress
@@ -1992,7 +1993,7 @@ async def get_video(
     from ..core.database import Database
     db = Database()
     
-    task = await db.get_task(video_id)
+    task = await db.get_task_by_poll_id(video_id)
     if not task:
         return JSONResponse(
             status_code=404,

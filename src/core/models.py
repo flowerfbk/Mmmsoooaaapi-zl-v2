@@ -58,6 +58,7 @@ class Task(BaseModel):
     """Task model"""
     id: Optional[int] = None
     task_id: str
+    poll_task_id: Optional[str] = None  # External polling ID (e.g. sora-2-xxx)
     token_id: Optional[int] = None  # Can be None for async tasks before token assignment
     generation_id: Optional[str] = None  # Sora generation ID (gen_xxx)
     permalink: Optional[str] = None  # Sora share link (if available)

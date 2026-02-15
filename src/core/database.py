@@ -967,6 +967,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id TEXT UNIQUE NOT NULL,
+                    poll_task_id TEXT,
                     token_id INTEGER,
                     generation_id TEXT,
                     permalink TEXT,
@@ -1224,8 +1225,17 @@ class Database:
                 except Exception:
                     pass
 
+            # Ensure poll_task_id column exists in tasks table (for existing databases)
+            if not await self._column_exists(db, "tasks", "poll_task_id"):
+                try:
+                    await db.execute("ALTER TABLE tasks ADD COLUMN poll_task_id TEXT")
+                    await db.commit()
+                except Exception:
+                    pass
+
             # Create indexes
             await db.execute("CREATE INDEX IF NOT EXISTS idx_task_id ON tasks(task_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_task_poll_task_id ON tasks(poll_task_id)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_task_status ON tasks(status)")
             # Only create generation_id index if the column exists
             if await self._column_exists(db, "tasks", "generation_id"):
@@ -2009,11 +2019,76 @@ class Database:
             try:
                 async with self._connect() as db:
                     cursor = await db.execute("""
-                        INSERT INTO tasks (task_id, token_id, generation_id, model, prompt, status, progress)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (task.task_id, task.token_id, task.generation_id, task.model, task.prompt, task.status, task.progress))
+                        INSERT INTO tasks (task_id, poll_task_id, token_id, generation_id, permalink, model, prompt, status, progress)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        task.task_id,
+                        getattr(task, "poll_task_id", None),
+                        task.token_id,
+                        task.generation_id,
+                        getattr(task, "permalink", None),
+                        task.model,
+                        task.prompt,
+                        task.status,
+                        task.progress,
+                    ))
                     await db.commit()
                     return cursor.lastrowid
+            except Exception as e:
+                if self._should_retry_mysql_error(e):
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.2 * (attempt + 1))
+                        continue
+                raise
+
+    async def get_task_by_poll_id(self, poll_task_id: str) -> Optional[Task]:
+        """Get task by external polling ID (poll_task_id)."""
+        async with self._connect(readonly=True) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM tasks WHERE poll_task_id = ? ORDER BY created_at DESC LIMIT 1",
+                (poll_task_id,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                return Task(**dict(row))
+            return None
+
+    async def update_task_by_poll_id(
+        self,
+        poll_task_id: str,
+        status: str,
+        progress: float,
+        result_urls: Optional[str] = None,
+        error_message: Optional[str] = None,
+        generation_id: Optional[str] = None,
+        permalink: Optional[str] = None,
+    ):
+        """Update task status by external polling ID (poll_task_id)."""
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                async with self._connect() as db:
+                    completed_at = datetime.now() if status in ["completed", "failed", "cancelled"] else None
+                    updates = [
+                        "status = ?",
+                        "progress = ?",
+                        "result_urls = ?",
+                        "error_message = ?",
+                        "completed_at = ?",
+                    ]
+                    params = [status, progress, result_urls, error_message, completed_at]
+                    if generation_id is not None:
+                        updates.append("generation_id = ?")
+                        params.append(generation_id)
+                    if permalink is not None:
+                        updates.append("permalink = ?")
+                        params.append(permalink)
+                    params.append(poll_task_id)
+                    query = f"UPDATE tasks SET {', '.join(updates)} WHERE poll_task_id = ?"
+                    await db.execute(query, params)
+                    await db.commit()
+                    return
             except Exception as e:
                 if self._should_retry_mysql_error(e):
                     if attempt < max_retries - 1:
