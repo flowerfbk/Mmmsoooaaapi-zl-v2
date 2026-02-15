@@ -1554,6 +1554,45 @@ async def create_video(
             model = "sora-2"
         elif model in ["sora-2-pro", "sora2-pro", "sora2pro"]:
             model = "sora-2-pro"
+
+        # If model is in ali-* format, parse orientation and duration from the name
+        # so that clients can send e.g. "ali-sora-video-landscape-10s" without explicitly
+        # providing seconds/size/orientation.
+        if model and isinstance(model, str) and model.startswith("ali-"):
+            try:
+                lowered = model.lower()
+                if lowered in ("ali-sora-2", "ali-sora2", "ali-sora2-10s"):
+                    model = "sora-2"
+                elif lowered in ("ali-sora-2-pro", "ali-sora2-pro", "ali-sora2pro"):
+                    model = "sora-2-pro"
+                else:
+                    parts = lowered.split("-")
+                    orientation_hint = None
+                    duration_hint = None
+                    for p in parts:
+                        if p in ("portrait", "potrait"):
+                            orientation_hint = "portrait"
+                        elif p == "landscape":
+                            orientation_hint = "landscape"
+                        elif p.endswith("s") and p[:-1].isdigit():
+                            duration_hint = int(p[:-1])
+                        elif p.isdigit():
+                            duration_hint = int(p)
+
+                    if duration_hint is not None and not seconds:
+                        seconds = str(duration_hint)
+                    if orientation_hint and not orientation:
+                        orientation = orientation_hint
+                    if not size and orientation_hint:
+                        if orientation_hint == "portrait":
+                            size = "720x1280"
+                        elif orientation_hint == "landscape":
+                            size = "1280x720"
+
+                    # Business ali-* variants map to sora-2 family
+                    model = "sora-2"
+            except Exception:
+                pass
         
         # Validate model
         valid_models = ["sora-2", "sora-2-pro"]

@@ -298,6 +298,41 @@ MODEL_CONFIG = {
     }
 }
 
+# Business-facing ali-* model ids (ported from mysoraserver-zl).
+# These are aliases to the existing sora-* family configs so upstream can send
+# e.g. "ali-sora-video-landscape-10s" while v2 still runs the same internal flow.
+MODEL_CONFIG.update({
+    # ali image aliases
+    "ali-sora-image": dict(MODEL_CONFIG["sora-image"]),
+    "ali-sora-image-landscape": dict(MODEL_CONFIG["sora-image-landscape"]),
+    "ali-sora-image-portrait": dict(MODEL_CONFIG["sora-image-portrait"]),
+
+    # ali video aliases
+    "ali-sora-video-10s": dict(MODEL_CONFIG["sora-video-10s"]),
+    "ali-sora-video-landscape-10s": dict(MODEL_CONFIG["sora-video-landscape-10s"]),
+    "ali-sora-video-portrait-10s": dict(MODEL_CONFIG["sora-video-portrait-10s"]),
+    "ali-sora-video-15s": dict(MODEL_CONFIG["sora-video-15s"]),
+    "ali-sora-video-landscape-15s": dict(MODEL_CONFIG["sora-video-landscape-15s"]),
+    "ali-sora-video-portrait-15s": dict(MODEL_CONFIG["sora-video-portrait-15s"]),
+    "ali-sora-video-25s": dict(MODEL_CONFIG["sora-video-25s"]),
+    "ali-sora-video-landscape-25s": dict(MODEL_CONFIG["sora-video-landscape-25s"]),
+    "ali-sora-video-portrait-25s": dict(MODEL_CONFIG["sora-video-portrait-25s"]),
+
+    # ali sora2 aliases (same as sora2-*)
+    "ali-sora2-10s": dict(MODEL_CONFIG["sora2-10s"]),
+    "ali-sora2-landscape-10s": dict(MODEL_CONFIG["sora2-landscape-10s"]),
+    "ali-sora2-portrait-10s": dict(MODEL_CONFIG["sora2-portrait-10s"]),
+    "ali-sora2-15s": dict(MODEL_CONFIG["sora2-15s"]),
+    "ali-sora2-landscape-15s": dict(MODEL_CONFIG["sora2-landscape-15s"]),
+    "ali-sora2-portrait-15s": dict(MODEL_CONFIG["sora2-portrait-15s"]),
+    "ali-sora2-25s": dict(MODEL_CONFIG["sora2-25s"]),
+    "ali-sora2-landscape-25s": dict(MODEL_CONFIG["sora2-landscape-25s"]),
+    "ali-sora2-portrait-25s": dict(MODEL_CONFIG["sora2-portrait-25s"]),
+
+    # base family alias used by business naming
+    "ali-sora-2": dict(MODEL_CONFIG["sora-2"]),
+})
+
 class GenerationHandler:
     """Handle generation requests"""
 
