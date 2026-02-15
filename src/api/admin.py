@@ -1320,6 +1320,147 @@ async def get_logs(limit: int = 100, token: str = Depends(verify_admin_token)):
 
     return result
 
+
+# Database browsing endpoints (admin only)
+@router.get("/api/admin/db/tables")
+async def get_db_tables(token: str = Depends(verify_admin_token)) -> dict:
+    """List all database tables for admin UI.
+
+    Returns a simple list of table names, excluding internal/system tables.
+    """
+    tables = []
+    # Use low-level connection to support both SQLite and MySQL
+    async with db._connect(readonly=True) as conn:  # type: ignore[attr-defined]
+        if db.db_type == "mysql":  # MySQL: use information_schema
+            cursor = await conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name"
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                name = row.get("table_name") if isinstance(row, dict) else row[0]
+                if name:
+                    tables.append(name)
+        else:
+            # SQLite: read from sqlite_master and filter out internal tables
+            cursor = await conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                # aiosqlite.Row supports both index and key access
+                try:
+                    name = row["name"]
+                except Exception:
+                    name = row[0]
+                if name:
+                    tables.append(name)
+
+    return {"tables": tables}
+
+
+@router.get("/api/admin/db/table")
+async def get_db_table_data(
+    table: str,
+    page: int = 1,
+    page_size: int = 50,
+    token: str = Depends(verify_admin_token),
+):
+    """Get paginated rows for a specific table (admin UI).
+
+    - Results are ordered in descending order by created_at if available,
+      otherwise by id if available.
+    - Page size is capped to a reasonable maximum (100).
+    """
+    # Basic page bounds
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+
+    # Validate table name against actual tables to avoid SQL injection
+    tables_resp = await get_db_tables(token)  # reuse logic above
+    valid_tables = set(tables_resp.get("tables") or [])
+    if table not in valid_tables:
+        raise HTTPException(status_code=400, detail="Invalid table name")
+
+    # Discover columns and choose order column
+    columns: list[str] = []
+    order_column: str | None = None
+
+    async with db._connect(readonly=True) as conn:  # type: ignore[attr-defined]
+        if db.db_type == "mysql":
+            # Get column names
+            cursor = await conn.execute(f"SHOW COLUMNS FROM `{table}`")
+            rows = await cursor.fetchall()
+            for row in rows:
+                col = row.get("Field") if isinstance(row, dict) else row[0]
+                if col:
+                    columns.append(col)
+        else:
+            # SQLite
+            cursor = await conn.execute(f"PRAGMA table_info({table})")
+            rows = await cursor.fetchall()
+            for row in rows:
+                try:
+                    col = row["name"]
+                except Exception:
+                    col = row[1]
+                if col:
+                    columns.append(col)
+
+        # Decide order column
+        if "created_at" in columns:
+            order_column = "created_at"
+        elif "id" in columns:
+            order_column = "id"
+
+        # Count total rows
+        count_sql = f"SELECT COUNT(*) AS cnt FROM `{table}`" if db.db_type == "mysql" else f"SELECT COUNT(*) AS cnt FROM {table}"
+        cursor = await conn.execute(count_sql)
+        row = await cursor.fetchone()
+        total = db._get_count_value(row)  # type: ignore[attr-defined]
+
+        # Fetch page data
+        offset = (page - 1) * page_size
+        if order_column:
+            if db.db_type == "mysql":
+                data_sql = f"SELECT * FROM `{table}` ORDER BY `{order_column}` DESC LIMIT ? OFFSET ?"
+            else:
+                data_sql = f"SELECT * FROM {table} ORDER BY {order_column} DESC LIMIT ? OFFSET ?"
+            cursor = await conn.execute(data_sql, (page_size, offset))
+        else:
+            if db.db_type == "mysql":
+                data_sql = f"SELECT * FROM `{table}` LIMIT ? OFFSET ?"
+            else:
+                data_sql = f"SELECT * FROM {table} LIMIT ? OFFSET ?"
+            cursor = await conn.execute(data_sql, (page_size, offset))
+
+        rows = await cursor.fetchall()
+
+        # Normalize rows to plain dicts
+        normalized_rows: list[dict] = []
+        for r in rows:
+            if isinstance(r, dict):
+                normalized_rows.append(r)
+            else:
+                # aiosqlite.Row behaves like a mapping
+                try:
+                    normalized_rows.append(dict(r))
+                except Exception:
+                    # Fallback: use positional indexes with discovered columns
+                    normalized_rows.append({col: r[idx] for idx, col in enumerate(columns)})
+
+        # If columns list is empty (e.g. empty table), infer from first row
+        if not columns and normalized_rows:
+            columns = list(normalized_rows[0].keys())
+
+    return {
+        "table": table,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "columns": columns,
+        "rows": normalized_rows,
+    }
+
 # Cache config endpoints
 @router.post("/api/cache/config")
 async def update_cache_timeout(

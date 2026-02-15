@@ -1927,6 +1927,11 @@ async def get_video(
             "seconds": task_info["seconds"],
             "size": task_info["size"],
         }
+
+        # Align with mysoraserver-zl: return url when completed
+        result_url = task_info.get("result_url")
+        if task_info.get("status") == "completed" and result_url:
+            response["url"] = result_url
         
         if task_info.get("completed_at"):
             response["completed_at"] = task_info["completed_at"]
@@ -1938,15 +1943,13 @@ async def get_video(
             response["remixed_from_video_id"] = task_info["remix_target_id"]
         
         if task_info.get("error"):
-            response["error"] = task_info["error"]
-
-        metadata = {}
-        if task_info.get("generation_id"):
-            metadata["generation_id"] = task_info["generation_id"]
-        if task_info.get("permalink"):
-            metadata["permalink"] = task_info["permalink"]
-        if metadata:
-            response["metadata"] = metadata
+            err = task_info.get("error")
+            response["error"] = {
+                "message": (err or {}).get("message") or "Video generation failed",
+                "type": "invalid_request_error",
+                "code": (err or {}).get("code") or "generation_failed",
+                "param": None,
+            }
         
         return JSONResponse(content=response)
     
@@ -1956,7 +1959,17 @@ async def get_video(
     
     task = await db.get_task(video_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "message": "Task not found",
+                    "type": "invalid_request_error",
+                    "code": "task_not_found",
+                    "param": None,
+                }
+            },
+        )
     
     created_at = int(task.created_at.timestamp()) if task.created_at else int(time.time())
     
@@ -1999,6 +2012,17 @@ async def get_video(
         "seconds": duration,
         "size": size,
     }
+
+    # Align with mysoraserver-zl: return url when completed
+    if task.status == "completed" and task.result_urls:
+        try:
+            parsed = json.loads(task.result_urls)
+            if isinstance(parsed, list) and parsed:
+                response["url"] = parsed[0]
+            elif isinstance(parsed, str):
+                response["url"] = parsed
+        except Exception:
+            response["url"] = task.result_urls
     
     if task.status == "completed" and task.completed_at:
         response["completed_at"] = int(task.completed_at.timestamp())
@@ -2006,16 +2030,10 @@ async def get_video(
     if task.error_message:
         response["error"] = {
             "message": task.error_message,
-            "code": "generation_failed"
+            "type": "invalid_request_error",
+            "code": "generation_failed",
+            "param": None,
         }
-
-    metadata = {}
-    if task.generation_id:
-        metadata["generation_id"] = task.generation_id
-    if task.permalink:
-        metadata["permalink"] = task.permalink
-    if metadata:
-        response["metadata"] = metadata
     
     return JSONResponse(content=response)
 
