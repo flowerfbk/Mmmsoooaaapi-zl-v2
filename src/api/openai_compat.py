@@ -935,6 +935,19 @@ async def _process_video_generation_v2(video_id: str):
             generation_id=task_info.get("generation_id"),
             permalink=task_info.get("permalink")
         )
+
+        # Update request log so admin UI can reliably display video URL
+        try:
+            await generation_handler.db.update_request_log_by_task_id(
+                video_id,
+                response_body=json.dumps(
+                    {"task_id": video_id, "status": "success", "url": result_url, "urls": [result_url]},
+                    ensure_ascii=False
+                ),
+                status_code=200,
+            )
+        except Exception:
+            pass
         
         print(f"[VideoTask] {video_id}: Task completed successfully. Status in memory: {task_info['status']}")
     
@@ -1051,9 +1064,31 @@ async def _poll_lambda_task_result(task_id: str, token_obj, prompt: str,
             # Success
             duration = time.time() - start_time
             await generation_handler.token_manager.record_success(current_token_obj.id, is_video=True)
+
+            # Ensure request log contains url/urls for admin UI (manage.html parses response_body)
+            url = None
+            try:
+                completed_task = await db.get_task(task_id)
+                if completed_task and completed_task.result_urls:
+                    try:
+                        parsed = json.loads(completed_task.result_urls)
+                        if isinstance(parsed, list) and parsed:
+                            url = parsed[0]
+                        elif isinstance(parsed, str):
+                            url = parsed
+                    except Exception:
+                        url = completed_task.result_urls
+            except Exception:
+                url = None
+
             await generation_handler._log_request_complete(
                 log_id,
-                {"task_id": task_id, "actual_task_id": current_task_id, "status": "success"},
+                {
+                    "task_id": task_id,
+                    "actual_task_id": current_task_id,
+                    "status": "success",
+                    **({"url": url, "urls": [url]} if url else {})
+                },
                 200,
                 duration
             )
